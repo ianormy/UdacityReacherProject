@@ -75,17 +75,11 @@ def parse_args():
         required=False,
         help='Size of batches to use for training')
     parser.add_argument(
-        '--actor-layers',
+        '--policy-layers',
         type=str,
-        default='128,128,128',
+        default='400,300',
         required=False,
-        help='actor hidden layers')
-    parser.add_argument(
-        '--critic-layers',
-        type=str,
-        default='128,128,128',
-        required=False,
-        help='critic hidden layers')
+        help='policy hidden layers')
     parser.add_argument(
         '--learning-rate',
         type=float,
@@ -104,6 +98,12 @@ def parse_args():
         default=0.99,
         required=False,
         help='Greedy strategy gamma value')
+    parser.add_argument(
+        '--buffer-size',
+        type=int,
+        default=1000000,
+        required=False,
+        help='Size of the buffer for replay memory')
     return parser, parser.parse_args()
 
 
@@ -116,20 +116,26 @@ def main():
         parser.print_help()
         sys.exit(0)
 
+    # create all the folders needed for the experiment
+    experiment_folder = os.path.join(args.experiments_root, args.experiment_name)
+    os.makedirs(experiment_folder, exist_ok=True)
+    model_folder = os.path.join(experiment_folder, 'model')
+    os.makedirs(model_folder, exist_ok=True)
+    results_folder = os.path.join(experiment_folder, 'results')
+    os.makedirs(results_folder, exist_ok=True)
+    # create the environment
     env = UnityMlFacade(executable_path=args.executable_path, seed=args.seed,
                         environment_port=args.environment_port)
-    # with the current version of stable-baselines3 the implementation of TD3
-    # uses the same network layers for both the actor and critic. I've included
-    # both in case this changes.
-    actor_layers = [int(layer_width) for layer_width in args.actor_layers.split(',')]
-    critic_layers = [int(layer_width) for layer_width in args.critic_layers.split(',')]
+    # monitor the episode rewards and output them to a CSV file
+    monitor_file = os.path.join(results_folder, "episode_results.monitor.csv")
+    env = Monitor(env, monitor_file)
+    # create the model agent using the parameters provided
+    policy_layers = [int(layer_width) for layer_width in args.policy_layers.split(',')]
     seed = random.randint(0, int(1e6)) if args.seed == -1 else args.seed
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
     if args.algorithm == 'td3':
         model_name = 'TD3'
-        policy_kwargs = dict(net_arch=actor_layers)
+        policy_kwargs = dict(net_arch=policy_layers)
         model = td3.TD3(
             td3.MlpPolicy,
             env,
@@ -143,16 +149,6 @@ def main():
     else:
         print("Sorry, only the TD3 algorithm is currently supported")
         sys.exit(-1)
-    # create all the folders needed for the experiment
-    experiment_folder = os.path.join(args.experiments_root, args.experiment_name)
-    os.makedirs(experiment_folder, exist_ok=True)
-    model_folder = os.path.join(experiment_folder, 'model')
-    os.makedirs(model_folder, exist_ok=True)
-    results_folder = os.path.join(experiment_folder, 'results')
-    os.makedirs(results_folder, exist_ok=True)
-    # monitor the episode rewards and output them to a CSV file
-    monitor_file = os.path.join(results_folder, "episode_results.csv")
-    env = Monitor(env, monitor_file)
     # setup the callback
     reward_callback = RewardCallback(
         eval_env=env,
@@ -162,11 +158,12 @@ def main():
     # save all the hyperparameters for this experiment
     with open(os.path.join(experiment_folder, 'hyperparameters.txt'), 'w') as f:
         f.write('learning rate: {}\n'.format(args.learning_rate))
-        f.write('actor (policy) layers: {}\n'.format(args.actor_layers))
-        f.write('critic (value) layers: {}\n'.format(args.critic_layers))
+        f.write('policy layers: {}\n'.format(args.policy_layers))
         f.write('seed: {}\n'.format(seed))
         f.write('algorithm: {}\n'.format(args.algorithm))
         f.write('batch size: {}\n'.format(args.batch_size))
+        f.write('buffer size: {}\n'.format(args.buffer_size))
+        f.write('gamma: {}\n'.format(args.gamma))
         f.write('total timesteps: {}\n'.format(args.total_timesteps))
     # run the experiment
     model.learn(

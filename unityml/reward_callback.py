@@ -1,3 +1,4 @@
+"""This implements a stable-baselines3 callback that can be used for checking rewards."""
 from typing import Union
 import gym
 import numpy as np
@@ -8,6 +9,7 @@ from stable_baselines3.common import logger
 
 
 class RewardCallback(BaseCallback):
+    """This implements a stable-baselines3 callback that can be used for checking rewards."""
     def __init__(
             self,
             eval_env: Union[VecEnv, gym.Env],
